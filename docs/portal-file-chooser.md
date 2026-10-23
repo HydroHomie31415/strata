@@ -81,12 +81,12 @@ same row restores your previous chooser when Strata is configured. File chooser
 replacement is separate from making Strata the default file manager, folder
 handler, or “Open file location” handler.
 
-The installer asks separately, defaulting to **No**, after placing the binary at
-its permanent path. A declined installer offer is remembered so the app does not
-ask again. For unattended installation, `--with-file-chooser` opts in;
-`--without-file-chooser` keeps your current chooser and suppresses the in-app offer.
-A plain `--non-interactive` install does neither: the app can still ask on its first
-normal launch. These options require a release containing portal support.
+The installer enables the file chooser by default, in the recommended setup and
+in unattended installs, after placing the binary at its permanent path. Deselect
+it under **Customize installation** or pass `--without-file-chooser` to keep your
+current chooser; a declined installer offer is remembered so the app does not ask
+again. `--with-file-chooser` requires it and fails on a release without portal
+support, where the default is skipped with a warning.
 
 The offer is remembered in `${XDG_CONFIG_HOME:-~/.config}/strata/portal-opt-in-v1`,
 shared by the installer, CLI, and all app windows. Administrators can suppress only

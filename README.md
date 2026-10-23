@@ -70,10 +70,13 @@ Arch Linux and Omarchy are the primary supported environments. Current binaries 
 ### Interactive installation
 
 The interactive installer detects the Linux architecture, glibc version, Arch
-Linux, and Omarchy 3 or 4. Choose the recommended installation for Strata and its
-application launcher without changing existing defaults, or customize the desktop,
-file chooser, encrypted-volume unlock, SMB, image/RAW, and shortcut integrations.
-Only options supported by your system are offered:
+Linux, and Omarchy 3 or 4. The recommended installation gives you the full
+experience: Strata with every integration your system supports, which means the
+application launcher, folder handling and "Open file location", the system file
+chooser, SMB and image/RAW support on Arch, the file-manager shortcuts on Omarchy
+3 or 4 (a backup of the previous bindings is kept), and encrypted-volume unlock
+when `udiskie` is installed. Choose **Customize installation** to deselect any of
+them. Only options supported by your system are offered:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lgse/strata/main/install.sh | bash
@@ -92,39 +95,49 @@ Detailed logs are retained for failures, warnings, and integration notices; pack
 operations are logged without recording terminal password input.
 
 The installer shows every privileged package operation before asking to run it.
-It verifies both the published SHA-256 digest and GitHub Actions provenance before
-installing anything from the release archive. The binary is installed per-user at
-`~/.local/bin/strata`.
+Before extracting anything, it downloads the release's
+[signed update manifest](docs/signed-updates.md), verifies its Ed25519 signature
+with `openssl` against the release key pinned in the script (the same key the
+in-app updater trusts), and checks the archive's size and SHA-256 against the
+signed values. It needs no GitHub CLI or account, and it stops instead of falling
+back to a checksum when a release is unsigned or verification fails. The binary
+is installed per-user at `~/.local/bin/strata`.
+
+Every release also publishes `install.sh` and `install.sh.sha256` as attested
+release assets. To run the installer that shipped with the latest release instead
+of the copy on `main`:
+
+```bash
+curl -fsSLO https://github.com/lgse/strata/releases/latest/download/install.sh
+curl -fsSLO https://github.com/lgse/strata/releases/latest/download/install.sh.sha256
+sha256sum --check install.sh.sha256 && bash install.sh
+```
+
+With GitHub CLI, `gh attestation verify install.sh --repo lgse/strata` confirms
+the script was built by the release workflow.
 
 For an unattended Arch or Omarchy installation, pass `--non-interactive`. This
-installs required dependencies and the binary without prompting; optional
-integrations remain disabled unless explicitly selected:
+installs the dependencies, the binary, and every integration the system supports
+without prompting. Decline individual integrations with `--without-*` flags:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lgse/strata/main/install.sh \
   | bash -s -- --non-interactive \
-      --with-smb \
-      --with-raw \
-      --with-desktop-entry \
-      --with-folder-association
+      --without-smb \
+      --without-file-chooser
 ```
 
-Add `--with-omarchy-keybinds` only on Omarchy 3 or 4. Add
-`--with-udiskie-unlock` only when `udiskie` is already installed on an Arch-based
-system. Unsupported explicit options are rejected before installation begins.
-
-Each `--with-*` flag implies `--non-interactive`, and folder association implies
-the desktop entry and `--with-file-manager`. Use `--with-file-manager` by itself
-to enable only "Open file location" integration. File chooser replacement is
-separate: use `--with-file-chooser` to opt in, or `--without-file-chooser` to keep
-your current chooser and dismiss the one-time in-app offer. Neither folder
-association nor an unattended install enables the chooser automatically.
-Encrypted-volume unlock is offered on Omarchy 3 or 4 (the installer asks; default
-No), and on generic Arch only when `udiskie` is already on `PATH`. The installer
-never installs the `udiskie` package. Unattended installs need
-`--with-udiskie-unlock`; `--non-interactive` alone and other `--with-*` flags
-leave it declined. Restore on Arch with `strata --uninstall-udiskie-unlock`, not
-Settings.
+Each `--with-*` or `--without-*` flag implies `--non-interactive`. A `--with-*`
+flag requires its integration and fails before installing anything when the
+system or the release cannot provide it, whereas a default is skipped with a
+warning. `--with-omarchy-keybinds` is accepted only on Omarchy 3 or 4, and
+`--with-udiskie-unlock` only when `udiskie` is already on `PATH` on an Arch-based
+system. Folder association implies the desktop entry and "Open file location", so
+`--without-desktop-entry` and `--without-file-manager` also drop it. File chooser
+replacement is separate from folder handling: `--without-file-chooser` keeps your
+current chooser and dismisses the one-time in-app offer.
+The installer never installs the `udiskie` package. Restore encrypted-volume
+unlock on Arch with `strata --uninstall-udiskie-unlock`, not Settings.
 
 Non-interactive package installation requires passwordless sudo or cached credentials. Run `./install.sh --help` for the full option list.
 
@@ -155,11 +168,14 @@ Then:
   iPhone/iPad app documents, gvfs-gphoto2 for camera/PTP photo access, or gvfs-mtp
   for Android file transfers, only if requested. Other distributions need their
   equivalent GVfs backends.
-- Download the archive and its matching .sha256 file from the latest GitHub release.
-- Verify the checksum with sha256sum --check. If GitHub CLI is installed and
-  authenticated, also verify GitHub Actions provenance with
-  `gh attestation verify <archive> --repo lgse/strata`. Stop if either attempted
-  verification fails; never install a binary with an invalid checksum.
+- Download the archive, strata-update-manifest.json, and
+  strata-update-manifest.signatures.json from the latest GitHub release.
+- Verify the manifest's Ed25519 signature with `openssl pkeyutl -verify -rawin`
+  against a public key from data/update-keys.json in the repository, over the
+  bytes `strata-update-manifest-v1`, one NUL byte, and the exact manifest file.
+  Then check the archive's size and SHA-256 against the signed entry for this
+  architecture. Stop if any check fails; never install an unsigned or mismatched
+  archive, and do not fall back to the .sha256 file.
 - Extract it and install `strata` to ~/.local/bin/strata without overwriting an
   unrelated file. Ensure ~/.local/bin is on PATH.
 - Ask whether I want a per-user desktop entry and inode/directory association;
@@ -217,20 +233,26 @@ you can copy or run in your terminal, and
 
 #### 2. Download and verify
 
-From the [latest release](https://github.com/lgse/strata/releases/latest), download the `.tar.gz` matching `$target` and its identically named `.sha256` file over HTTPS. Then verify its digest:
+From the [latest release](https://github.com/lgse/strata/releases/latest), download the `.tar.gz` matching `$target` together with `strata-update-manifest.json` and `strata-update-manifest.signatures.json` over HTTPS. The manifest is signed with the Ed25519 release key from [`data/update-keys.json`](data/update-keys.json), the same key the in-app updater trusts. Verify the signature, then compare the archive with its signed entry:
 
 ```bash
 cd ~/Downloads
 archive="strata-<version>-${target}.tar.gz"
-sha256sum --check "${archive}.sha256"
+key=$(curl -fsSL https://raw.githubusercontent.com/lgse/strata/main/data/update-keys.json | grep -o '[0-9a-f]\{64\}' | head -1)
+printf '302a300506032b6570032100%s' "$key" | tr a-f A-F | basenc --base16 -d > release-key.der
+{ printf 'strata-update-manifest-v1\0'; cat strata-update-manifest.json; } > signed-message
+grep -o '"signature":"[0-9a-f]*"' strata-update-manifest.signatures.json | head -1 | cut -d'"' -f4 | tr a-f A-F | basenc --base16 -d > signature
+openssl pkeyutl -verify -rawin -pubin -keyform DER -inkey release-key.der -sigfile signature -in signed-message
+grep -o "{\"name\":\"$archive\"[^}]*}" strata-update-manifest.json
+stat -c %s "$archive" && sha256sum "$archive"
 ```
 
-If GitHub CLI is installed and authenticated, you can additionally verify the
-archive's signed GitHub Actions provenance before extracting it:
-
-```bash
-gh attestation verify "$archive" --repo lgse/strata
-```
+The signature must verify, and the printed size and SHA-256 must equal the signed
+`size` and `sha256`. During a key rotation the signatures file lists one entry per
+key; pick the one whose `key_id` is the SHA-256 of your key's raw bytes. The
+`.sha256` files and GitHub build-provenance attestations are still published for
+packagers, and `gh attestation verify "$archive" --repo lgse/strata` remains an
+optional extra check, but neither replaces the signed manifest.
 
 Every verification you run must succeed. Extract the archive, install the binary,
 and confirm it starts:

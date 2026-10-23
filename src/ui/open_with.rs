@@ -1135,7 +1135,7 @@ pub(super) fn show(
                 }
             }
         }
-        let context = list.display().app_launch_context();
+        let context = crate::child_environment::launch_context(&list.display());
         if let Err(error) = launch(&entry.app, &open_files, &open_content_types, Some(&context)) {
             let detail = error.to_string();
             open_dismiss();

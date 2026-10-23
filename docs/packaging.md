@@ -100,6 +100,27 @@ The launcher and application icon are installed from the release archive, not fr
 
 The archive also ships `io.github.lgse.Strata.FileManager1.service`, which users can install under `$XDG_DATA_HOME/dbus-1/services` to make Strata the D-Bus-activatable owner of `org.freedesktop.FileManager1`. Packages must not install it into a system service directory: multiple files providing that name in one directory are selected arbitrarily, and merely installing Strata must not change the user's preferred file manager. They may install the inactive template under `/usr/share/strata` so users can opt in without downloading the archive. Keep activation an explicit per-user choice as documented in the README. Packages must not run `--install-udiskie-unlock` in `package()` or a pacman hook.
 
+### File manager activation and desktop portals
+
+The FileManager1 service starts Strata with `--gapplication-service`. For this
+launch mode, Strata re-executes before GTK initialization with `no-portals`
+added to `GDK_DEBUG`, preserving other debug flags. Keep that service argument
+when adapting the activation command for a package.
+
+This avoids a circular wait with desktop portals that synchronously dispatch
+`OpenDirectory` to `FileManager1.ShowItems`: GTK can query the same portal's
+host registry during startup, before Strata can answer ShowItems. With GTK
+4.24.1 and xdg-desktop-portal 1.22.1, that cycle delays cold activation for
+approximately 25 seconds and stalls other portal consumers.
+
+This is a compatibility mitigation for the activated process, not a replacement
+for asynchronous dispatch in the desktop portal. GTK portal integration is
+disabled for that process's lifetime, and later launches of Strata reuse that
+process until it exits. Programs it launches, file providers, and a restart from
+Settings get the original `GDK_DEBUG` back; ordinary launches and the separate
+`--portal` FileChooser backend never acquire the override. Do not set
+`GDK_DEBUG=no-portals` globally to address this problem.
+
 ## Other distributions
 
 Debian/Ubuntu, Fedora, Flatpak, and AppImage each have their own dependency, sandboxing, update, and review requirements and are tracked as separate issues. The AUR marker must not be reused for them until those provider-specific semantics are designed.

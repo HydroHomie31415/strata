@@ -2399,6 +2399,7 @@ fn restart_waiter(current_exe: &std::path::Path, parent_pid: u32) -> Option<Comm
         command.env_remove("GSK_RENDERER");
         command.env_remove(crate::CAIRO_SELECTED_BY_STRATA);
     }
+    crate::child_environment::restore_command(&mut command);
     Some(command)
 }
 
@@ -2980,7 +2981,9 @@ async fn launch_aur_update() -> Result<String, String> {
         .package()
         .ok_or_else(|| crate::i18n::tr("missing AUR package name"))?;
     let uri = format!("https://aur.archlinux.org/packages/{package}");
-    gio::AppInfo::launch_default_for_uri(&uri, None::<&gio::AppLaunchContext>)
+    let context = gtk::gdk::Display::default()
+        .map(|display| crate::child_environment::launch_context(&display));
+    gio::AppInfo::launch_default_for_uri(&uri, context.as_ref())
         .map(|()| crate::i18n::tr("AUR package page opened."))
         .map_err(|error| error.to_string())
 }

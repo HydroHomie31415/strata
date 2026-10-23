@@ -368,6 +368,7 @@ fn build_command(
         .env(ENV_DIRECTORY, &action.directory)
         .env(ENV_PROGRESS, &files.progress)
         .env(ENV_RUN_DIRECTORY, &context.run_directory);
+    crate::child_environment::restore_command(&mut command);
     if let Some((position, _)) = context.position {
         command.env(ENV_POSITION, position.to_string());
     }

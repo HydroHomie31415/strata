@@ -1276,7 +1276,7 @@ pub(in crate::ui) fn install_resolved_item_context_menu(
         let Some(app) = selection.default else {
             return;
         };
-        let context = state.overlay.display().app_launch_context();
+        let context = crate::child_environment::launch_context(&state.overlay.display());
         if let Err(error) = crate::ui::open_with::launch(
             &app,
             &selection.files,

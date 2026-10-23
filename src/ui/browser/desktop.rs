@@ -41,7 +41,7 @@ pub(in crate::ui) fn open_location_at(
         return;
     }
     let file = gio_file_for_location(location);
-    let context = parent.as_ref().display().app_launch_context();
+    let context = crate::child_environment::launch_context(&parent.as_ref().display());
     let parent = parent.as_ref().downgrade();
     let location = location.clone();
     let browser = Rc::downgrade(browser);
@@ -299,6 +299,7 @@ fn program_command(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    crate::child_environment::restore_command(&mut command);
     Ok(command)
 }
 
