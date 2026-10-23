@@ -33,6 +33,7 @@ struct Tab {
     content: Rc<WindowContent>,
     focus: RefCell<Option<glib::WeakRef<gtk::Widget>>>,
     checking: RefCell<Option<Location>>,
+    folder: RefCell<Option<String>>,
 }
 
 pub(in crate::ui::window) struct TabWindow {
@@ -242,6 +243,7 @@ impl TabWindow {
             content: content.clone(),
             focus: RefCell::new(None),
             checking: RefCell::new(None),
+            folder: RefCell::new(None),
         });
         self.stack
             .add_named(&content.overlay, Some(&id.to_string()));
@@ -256,7 +258,9 @@ impl TabWindow {
         let weak = Rc::downgrade(self);
         content.browser.observe_tab_location(move |location| {
             if let Some(state) = weak.upgrade() {
-                state.strip.label(id, &tab_label(location));
+                let label = tab_label(location);
+                state.strip.label(id, &label);
+                state.set_folder(id, location.map(|_| label));
                 state.persist_session();
             }
         });
@@ -296,6 +300,7 @@ impl TabWindow {
         tab.content.activate_actions(&window);
         self.refresh_chrome();
         self.strip.select(id);
+        self.refresh_title();
         let saved = tab
             .focus
             .borrow()
@@ -360,6 +365,33 @@ impl TabWindow {
         self.strip.remove(id);
         self.refresh_chrome();
         self.persist_session();
+    }
+
+    fn set_folder(&self, id: u64, folder: Option<String>) {
+        let Some(tab) = self.tabs.borrow().iter().find(|tab| tab.id == id).cloned() else {
+            return;
+        };
+        tab.folder.replace(folder);
+        if id == self.active.get() {
+            self.refresh_title();
+        }
+    }
+
+    fn refresh_title(&self) {
+        let Some(window) = self.window.upgrade() else {
+            return;
+        };
+        let title = self
+            .tabs
+            .borrow()
+            .iter()
+            .find(|tab| tab.id == self.active.get())
+            .and_then(|tab| tab.folder.borrow().clone())
+            .map_or_else(
+                || "Strata".to_owned(),
+                |folder| format!("{folder} — Strata"),
+            );
+        window.set_title(Some(&title));
     }
 
     fn refresh_chrome(&self) {
@@ -689,7 +721,7 @@ pub(in crate::ui::window) fn tab_index(digit: u8) -> usize {
 
 fn tab_label(location: Option<&Location>) -> String {
     let Some(location) = location else {
-        return "Home".into();
+        return crate::i18n::tr("Home");
     };
     if let Some(path) = location.native_path() {
         if Some(path)
@@ -705,11 +737,11 @@ fn tab_label(location: Option<&Location>) -> String {
     }
     let uri = location.uri_value().unwrap_or_default();
     match uri {
-        "trash:///" => "Trash".into(),
-        "recent:///" => "Recent".into(),
-        "network:///" => "Network".into(),
+        "trash:///" => crate::i18n::tr("Trash"),
+        "recent:///" => crate::i18n::tr("Recent"),
+        "network:///" => crate::i18n::tr("Network"),
         _ => gio::File::for_uri(uri).basename().map_or_else(
-            || "Location".into(),
+            || crate::i18n::tr("Location"),
             |name| name.to_string_lossy().into_owned(),
         ),
     }

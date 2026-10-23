@@ -14,13 +14,22 @@ pub(crate) fn result_rows(root: &gtk::Widget) -> Vec<gtk::Widget> {
         .collect()
 }
 
+/// Browser windows are titled "<folder> — Strata", so "Strata" matches every one.
+fn titled(window: &gtk::Window, title: &str) -> bool {
+    window.title().is_some_and(|actual| {
+        actual == title
+            || actual
+                .strip_suffix(title)
+                .is_some_and(|folder| folder.ends_with(" — "))
+    })
+}
+
 pub(crate) fn windows_titled(title: &str) -> Vec<gtk::Window> {
     gtk::Window::list_toplevels()
         .into_iter()
         .filter_map(|window| window.downcast::<gtk::Window>().ok())
         .filter(|window| {
-            window.title().as_deref() == Some(title)
-                && state::rendered_bounds(window.upcast_ref()).is_some()
+            titled(window, title) && state::rendered_bounds(window.upcast_ref()).is_some()
         })
         .collect()
 }
@@ -36,8 +45,7 @@ pub(super) fn toplevel(title: &str) -> Option<gtk::Widget> {
         .into_iter()
         .filter_map(|window| window.downcast::<gtk::Window>().ok())
         .find(|window| {
-            window.title().as_deref() == Some(title)
-                && state::rendered_bounds(window.upcast_ref()).is_some()
+            titled(window, title) && state::rendered_bounds(window.upcast_ref()).is_some()
         })
         .map(Cast::upcast)
 }
@@ -48,7 +56,7 @@ pub(super) fn other_window(main: &gtk::Window, title: &str) -> Option<gtk::Widge
         .filter_map(|window| window.downcast::<gtk::Window>().ok())
         .find(|window| {
             window != main
-                && window.title().as_deref() == Some(title)
+                && titled(window, title)
                 && state::rendered_bounds(window.upcast_ref()).is_some()
         })
         .map(Cast::upcast)

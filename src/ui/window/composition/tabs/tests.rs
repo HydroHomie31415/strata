@@ -223,6 +223,8 @@ fn folder_click_titles_skip_parent_focus_and_keyboard_preview_stays_parent_scope
         "ui::window::composition::tabs::tests::folder_click_titles_skip_parent_focus_and_keyboard_preview_stays_parent_scoped",
         || {
             let (root, window, tabs, view, title) = sibling_fixture(&application());
+            let window_title = || window.title().map(|title| title.to_string());
+            assert_eq!(window_title().as_deref(), Some("alpha — Strata"));
             let changes = Rc::new(RefCell::new(Vec::new()));
             let observed = changes.clone();
             title.connect_notify_local(Some("label"), move |title, _| {
@@ -246,9 +248,11 @@ fn folder_click_titles_skip_parent_focus_and_keyboard_preview_stays_parent_scope
                 "alpha",
                 "holding a click must not publish the parent title"
             );
+            assert_eq!(window_title().as_deref(), Some("alpha — Strata"));
             click.emit_by_name::<()>("released", &[&1i32, &1f64, &1f64]);
             wait_until(|| title.text() == "beta");
             assert_eq!(&*changes.borrow(), &["beta".to_string()]);
+            assert_eq!(window_title().as_deref(), Some("beta — Strata"));
             assert_eq!(view.browser().active_depth(), Some(1));
             assert!(view.browser().selected_entries().is_empty());
 
@@ -270,6 +274,9 @@ fn folder_click_titles_skip_parent_focus_and_keyboard_preview_stays_parent_scope
                 tabs.active_browser().browser().active_location(),
                 Some(Location::local(root.path().join("parent")))
             );
+            assert_eq!(window_title().as_deref(), Some("parent — Strata"));
+            tabs.select(2);
+            assert_eq!(window_title().as_deref(), Some("alpha — Strata"));
             window.destroy();
         },
     );

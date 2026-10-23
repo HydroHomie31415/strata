@@ -289,7 +289,7 @@ lookup that breaks, such as an unrealized surface, is an error, never
 | `{"preview":true}` | The quick preview drawer. |
 | `{"search_result":"todo.txt"}`, `{"result":"beta/match-note.txt"}`, `{"result_row":-1,"containing":"match-note"}` | Search result rows by name, by path, or by index among those whose name contains a part (or is `"name"`). |
 | `{"window":true}`, `{"window":true,"y_of":TARGET}` | The main window; with `y_of`, a point near its right edge at that target's centre height. |
-| `{"toplevel":"Copy to"}`, `{"other_window":"Strata"}` | Another application window by title (a floating chooser; a second browser window). |
+| `{"toplevel":"Copy to"}`, `{"other_window":"Strata"}` | Another application window by title (a floating chooser; a second browser window). A title also matches windows titled `"<folder> — <title>"`, so `"Strata"` finds every browser window and `"docs — Strata"` only the one showing `docs`. |
 | `{"parent":TARGET}`, `{"ancestor":"scroll pane","of":TARGET}` | A widget's parent; its nearest ancestor with the role. |
 | `{"kept":"edge"}` | A box or point `settle`, `remember`, or `keep` kept. |
 | `{"point":[X,Y]}` | A point from target coordinates, in whole pixels: each is `{"of":TARGET,"at":OFFSET}` (its centre without `at`), `{"mid":[A,B]}`, `{"max":[A,B]}`, or `{"extent":TARGET}` (its width or height taken as a screen coordinate), each with optional `"plus":N`. |
