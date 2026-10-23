@@ -84,6 +84,8 @@ pub(crate) enum Chord {
     Copy,
     Sort,
     Action,
+    /// **; .**: actions for the focused folder itself.
+    FolderAction,
     Tabs,
 }
 
@@ -92,21 +94,22 @@ impl Chord {
     pub(crate) fn mark(self) -> String {
         use super::keys::{
             Keys,
-            bindings::{ACTIONS, COPY_AS, GO, SORT_BY, TAB_CHORD},
+            bindings::{ACTIONS, ACTIONS_FOLDER, COPY_AS, GO, SORT_BY, TAB_CHORD},
         };
         let prefix = match self {
-            Self::Go | Self::PreviewTop => GO,
-            Self::Copy => COPY_AS,
-            Self::Sort => SORT_BY,
-            Self::Action => ACTIONS,
-            Self::Tabs => TAB_CHORD,
+            Self::Go | Self::PreviewTop => Keys::One(GO),
+            Self::Copy => Keys::One(COPY_AS),
+            Self::Sort => Keys::One(SORT_BY),
+            Self::Action => Keys::One(ACTIONS),
+            Self::FolderAction => Keys::Chord(&[ACTIONS, ACTIONS_FOLDER]),
+            Self::Tabs => Keys::One(TAB_CHORD),
         };
-        format!("{}-", super::keys::label(&Keys::One(prefix)))
+        format!("{}-", super::keys::label(&prefix))
     }
 
-    /// The second keys and their untranslated actions. The `;` panel lists
-    /// the matching actions itself, and a file chooser leaves out the steps
-    /// it refuses.
+    /// The second keys and their untranslated actions. The `;` and `; .`
+    /// panels list the matching actions themselves, and a file chooser leaves
+    /// out the steps it refuses.
     pub(crate) fn options(
         self,
         chooser: bool,
@@ -161,7 +164,7 @@ impl Chord {
                 (step(SORT_BY_TYPE), "Type"),
                 (Mention::Held(gtk::gdk::ModifierType::SHIFT_MASK), "Reverse"),
             ],
-            Self::Action => Vec::new(),
+            Self::Action | Self::FolderAction => Vec::new(),
             Self::Tabs => vec![
                 (step(TAB_CHORD_NEW), "New tab"),
                 (step(TAB_CHORD_CLOSE), "Close tab"),
