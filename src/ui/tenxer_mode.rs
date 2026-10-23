@@ -84,7 +84,6 @@ pub(crate) enum Chord {
     Copy,
     Sort,
     Action,
-    /// **; .**: actions for the focused folder itself.
     FolderAction,
     Tabs,
 }
@@ -107,9 +106,6 @@ impl Chord {
         format!("{}-", super::keys::label(&prefix))
     }
 
-    /// The second keys and their untranslated actions. The `;` and `; .`
-    /// panels list the matching actions themselves, and a file chooser leaves
-    /// out the steps it refuses.
     pub(crate) fn options(
         self,
         chooser: bool,

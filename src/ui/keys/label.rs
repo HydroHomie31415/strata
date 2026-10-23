@@ -19,8 +19,6 @@ pub(crate) enum Keys {
     Mixed(&'static [Keys]),
 }
 
-/// Digit-row keys 1 to `last`, and 0 when `zero`, with shared modifiers or
-/// after a chord prefix of one or two steps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Digits {
     prefix: Option<Binding>,
@@ -56,7 +54,6 @@ impl Digits {
         }
     }
 
-    /// The digit step of a three-key chord, such as **; . 1**.
     pub(crate) const fn after_chord(prefix: Binding, then: Binding, last: u8, zero: bool) -> Self {
         Self {
             then: Some(then),

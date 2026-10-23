@@ -346,9 +346,6 @@ impl BrowserView {
         self.state.refocus_cursor();
     }
 
-    /// The first ten actions for the fill or focused item, or with
-    /// [`InvocationSource::Background`] for the focused folder itself, as its
-    /// background menu offers them.
     pub(crate) fn numbered_actions(&self, source: InvocationSource) -> NumberedActions {
         let folder = self
             .focused_listing_depth()

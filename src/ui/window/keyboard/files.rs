@@ -237,8 +237,6 @@ impl Dispatcher {
         true
     }
 
-    /// Lists the actions for the fill or focused item with the lettered steps
-    /// after them, or for [`InvocationSource::Background`] the focused folder's.
     fn arm_actions(&self, source: InvocationSource) {
         use crate::ui::keys::{
             self, Keys,
@@ -300,8 +298,6 @@ impl Dispatcher {
         self.complete_numbered_action(press, InvocationSource::Selection)
     }
 
-    /// Runs the digit's slot only while the targets and the action listed in
-    /// it when the chord was armed still hold.
     pub(super) fn complete_numbered_action(
         &self,
         press: &KeyPress,

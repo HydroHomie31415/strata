@@ -99,7 +99,6 @@ catalog! {
         TENXER_PAGE_DOWN_PAGE_DOWN: Binding = Binding::ctrl(Key::Page_Down);
         TENXER_THUMBNAILS_LARGER_EQUAL: Binding = Binding::plain(Key::equal);
 
-        // The reference shows it inside ACTIONS_FOLDER_NUMBERS.
         ACTIONS_FOLDER: Binding = Binding::plain(Key::period);
 
         // The reference shows these as "Shift reverses" beside the sort chord.

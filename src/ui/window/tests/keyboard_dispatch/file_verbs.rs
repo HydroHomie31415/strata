@@ -766,7 +766,6 @@ fn tenxer_open_with_drops_a_lookup_overtaken_by_a_newer_interaction() {
     );
 }
 
-/// Records `<id> <source>` and then each path in `output`.
 fn write_action(id: &str, name: &str, menu: &str, when: &str, extra: &str, output: &Path) {
     let directory = crate::storage::config_directory().join("actions").join(id);
     std::fs::create_dir_all(&directory).expect("action folder");
