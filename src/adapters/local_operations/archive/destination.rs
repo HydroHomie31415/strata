@@ -122,7 +122,12 @@ pub(super) fn sanitized_archive_path(name: impl AsRef<OsStr>) -> Result<PathBuf,
             b".." => {
                 path.pop();
             }
-            bytes if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' => {
+            bytes
+                if path.as_os_str().is_empty()
+                    && bytes.len() >= 2
+                    && bytes[0].is_ascii_alphabetic()
+                    && bytes[1] == b':' =>
+            {
                 return Err(unsafe_archive_path(&name));
             }
             _ => path.push(OsStr::from_bytes(component)),

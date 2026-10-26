@@ -353,7 +353,20 @@ pub(super) fn entry_kind_summary(entries: &[FileEntry]) -> String {
     }
 }
 
-pub(super) async fn aggregate_directory_summary(entries: &[FileEntry]) -> DirectorySummary {
+pub(super) async fn delete_entry_size(entry: &FileEntry) -> MetadataValue<u64> {
+    if entry.kind == EntryKind::FileSymbolicLink {
+        crate::adapters::query_file_entry(entry.location.clone())
+            .await
+            .map_or(MetadataValue::Unavailable, |link| link.size)
+    } else {
+        entry.size.clone()
+    }
+}
+
+pub(super) async fn aggregate_directory_summary(
+    entries: &[FileEntry],
+    mut on_symlink_size: impl FnMut(usize, &MetadataValue<u64>),
+) -> DirectorySummary {
     let mut total = DirectorySummary::default();
     for (index, entry) in entries.iter().enumerate() {
         if index > 0 && index % 256 == 0 {
@@ -362,30 +375,22 @@ pub(super) async fn aggregate_directory_summary(entries: &[FileEntry]) -> Direct
         if entry.kind == EntryKind::Directory {
             let directory = gio_file_for_location(&entry.location);
             match summarize_directory(&directory).await {
-                Ok(summary) => {
-                    total.item_count = total.item_count.saturating_add(summary.item_count);
-                    total.total_size = total.total_size.saturating_add(summary.total_size);
-                    total.visible_file_count = total
-                        .visible_file_count
-                        .saturating_add(summary.visible_file_count);
-                    total.visible_folder_count = total
-                        .visible_folder_count
-                        .saturating_add(summary.visible_folder_count);
-                    total.issues.unreadable |= summary.issues.unreadable;
-                    total.issues.timed_out |= summary.issues.timed_out;
-                    total.issues.depth_limited |= summary.issues.depth_limited;
-                }
+                Ok(summary) => total.include(summary),
                 Err(_) => total.issues.unreadable = true,
             }
         } else {
             total.item_count = total.item_count.saturating_add(1);
             total.visible_file_count = total.visible_file_count.saturating_add(1);
-            match entry.size {
+            let size = delete_entry_size(entry).await;
+            if entry.kind == EntryKind::FileSymbolicLink {
+                on_symlink_size(index, &size);
+            }
+            match size {
                 MetadataValue::Known(size) => {
                     total.total_size = total.total_size.saturating_add(size);
                 }
                 MetadataValue::Unknown | MetadataValue::Unavailable => {
-                    if !entry.is_symbolic_link() {
+                    if !entry.is_symbolic_link() || entry.kind == EntryKind::FileSymbolicLink {
                         total.issues.unreadable = true;
                     }
                 }

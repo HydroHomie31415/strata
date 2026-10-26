@@ -214,6 +214,8 @@ pub struct ThemeManager {
     omarchy_monitors: RefCell<Vec<(PathBuf, LoadHandle)>>,
     pending_omarchy_refresh: RefCell<Option<glib::SourceId>>,
     themes_monitor: RefCell<Option<LoadHandle>>,
+    linked_theme_monitors: RefCell<Vec<(PathBuf, LoadHandle)>>,
+    linked_theme_targets: RefCell<Vec<PathBuf>>,
     pending_themes_refresh: RefCell<Option<glib::SourceId>>,
     user_style_monitor: RefCell<Option<LoadHandle>>,
     pending_user_style_refresh: RefCell<Option<glib::SourceId>>,
@@ -282,6 +284,8 @@ impl ThemeManager {
             omarchy_monitors: RefCell::new(Vec::new()),
             pending_omarchy_refresh: RefCell::new(None),
             themes_monitor: RefCell::new(None),
+            linked_theme_monitors: RefCell::new(Vec::new()),
+            linked_theme_targets: RefCell::new(Vec::new()),
             pending_themes_refresh: RefCell::new(None),
             user_style_monitor: RefCell::new(None),
             pending_user_style_refresh: RefCell::new(None),
@@ -311,6 +315,7 @@ impl ThemeManager {
         manager.monitor_text_scaling();
         manager.monitor_omarchy(&omarchy.directories);
         manager.monitor_custom_themes(themes_directory().is_dir());
+        manager.monitor_linked_themes(linked_theme_targets(&themes_directory()));
         manager
             .user_provider
             .load_from_string(&read_user_stylesheet());
@@ -857,6 +862,50 @@ impl ThemeManager {
         self.themes_monitor.replace(Some(monitor));
     }
 
+    /// Writes through a dotfiles symlink only reach the target's directory.
+    fn monitor_linked_themes(self: &Rc<Self>, targets: Vec<PathBuf>) {
+        let mut directories: Vec<PathBuf> = Vec::new();
+        for parent in targets.iter().filter_map(|target| target.parent()) {
+            if !directories.iter().any(|path| path == parent) {
+                directories.push(parent.to_path_buf());
+            }
+        }
+        self.linked_theme_targets.replace(targets);
+        let mut monitors = self.linked_theme_monitors.take();
+        monitors.retain(|(path, _)| directories.contains(path));
+        for path in directories {
+            if monitors.iter().any(|(watched, _)| *watched == path) {
+                continue;
+            }
+            let (changed, live) = (Rc::downgrade(self), Rc::downgrade(self));
+            let monitor = crate::adapters::watch(
+                &Location::local(&path),
+                Watched::Folder,
+                move |file, other_file| {
+                    let Some(manager) = changed.upgrade() else {
+                        return;
+                    };
+                    let linked = |file: &gio::File| {
+                        file.path().is_some_and(|path| {
+                            manager.linked_theme_targets.borrow().contains(&path)
+                        })
+                    };
+                    if linked(file) || other_file.is_some_and(linked) {
+                        manager.schedule_themes_refresh();
+                    }
+                },
+                // Catches a write made before the watch went live.
+                move || {
+                    if let Some(manager) = live.upgrade() {
+                        manager.schedule_themes_refresh();
+                    }
+                },
+            );
+            monitors.push((path, monitor));
+        }
+        self.linked_theme_monitors.replace(monitors);
+    }
+
     fn schedule_themes_refresh(self: &Rc<Self>) {
         if let Some(pending) = self.pending_themes_refresh.borrow_mut().take() {
             pending.remove();
@@ -873,10 +922,17 @@ impl ThemeManager {
     }
 
     pub(in crate::ui) fn refresh_custom_themes(self: &Rc<Self>) {
-        let loaded = crate::storage::writer::run(load_custom_themes);
+        let loaded = crate::storage::writer::run(|| {
+            (
+                load_custom_themes(),
+                linked_theme_targets(&themes_directory()),
+            )
+        });
         let weak = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
-            if let (Ok(custom), Some(manager)) = (loaded.await, weak.upgrade()) {
+            if let (Ok((custom, targets)), Some(manager)) = (loaded.await, weak.upgrade()) {
+                // Links may have been added, removed, or repointed.
+                manager.monitor_linked_themes(targets);
                 manager.adopt_custom_themes(custom);
             }
         });
@@ -914,6 +970,37 @@ fn is_custom_theme_event(file: &gio::File) -> bool {
             && path
                 .extension()
                 .is_some_and(|extension| extension == "toml")
+    })
+}
+
+fn linked_theme_targets(directory: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "toml")
+                && entry
+                    .file_type()
+                    .is_ok_and(|file_type| file_type.is_symlink())
+        })
+        .filter_map(|entry| resolve_theme_link(&entry.path()))
+        .collect()
+}
+
+/// A missing target still resolves, so its directory is watched until the file appears.
+fn resolve_theme_link(link: &Path) -> Option<PathBuf> {
+    fs::canonicalize(link).ok().or_else(|| {
+        let target = link.parent()?.join(fs::read_link(link).ok()?);
+        Some(
+            fs::canonicalize(target.parent()?)
+                .ok()?
+                .join(target.file_name()?),
+        )
     })
 }
 

@@ -522,6 +522,54 @@ fn live_watch(location: Location, notify: Rc<dyn Fn(DirectoryChange)>) -> LoadHa
 }
 
 #[test]
+fn exchanged_files_stay_listed_unless_they_are_deleted() -> Result<(), Box<dyn Error>> {
+    use rustix::fs::{CWD, RenameFlags, renameat_with};
+
+    let _serial = ASYNC_MAIN_CONTEXT_DEFAULT
+        .lock()
+        .map_err(|error| error.to_string())?;
+    for deleted in [true, false] {
+        let directory = tempfile::tempdir()?;
+        let original = directory.path().join("note.txt");
+        let hidden = directory.path().join(".strata-originals-test");
+        fs::create_dir(&hidden)?;
+        let staged = hidden.join("note.txt");
+        fs::write(&original, b"old")?;
+        fs::write(&staged, b"replacement")?;
+        let changes: Rc<RefCell<Vec<DirectoryChange>>> = Rc::default();
+        let collected = changes.clone();
+        let handle = live_watch(
+            Location::local(directory.path()),
+            Rc::new(move |change| collected.borrow_mut().push(change)),
+        );
+
+        renameat_with(CWD, &staged, CWD, &original, RenameFlags::EXCHANGE)?;
+        assert_eq!(fs::read(&original)?, b"replacement");
+        if deleted {
+            fs::remove_file(&original)?;
+        }
+        drain_until(|| !changes.borrow().is_empty());
+        drop(handle);
+
+        let location = Location::local(&original);
+        let observed = changes.borrow();
+        if deleted {
+            assert!(
+                matches!(observed.as_slice(), [DirectoryChange::Remove(path)] if path == &location),
+                "a genuine deletion must remove the row: {observed:?}"
+            );
+        } else {
+            assert!(
+                matches!(observed.as_slice(), [DirectoryChange::Upsert(entry)]
+                    if entry.location == location && entry.size == MetadataValue::Known(11)),
+                "the replacement must stay listed with its new metadata: {observed:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn change_events_for_unnamed_temporary_files_are_ignored() -> Result<(), Box<dyn Error>> {
     let _serial = ASYNC_MAIN_CONTEXT_DEFAULT
         .lock()
@@ -3488,6 +3536,33 @@ fn recent_removal_failure_logs_a_warning_and_allows_retry() {
     recent_remove_entries_with_backend(&state, &backend_dyn, [uri.clone()]);
     drain_until(|| state.in_flight.borrow().is_empty());
     assert_eq!(*backend.calls.borrow(), vec![uri.clone(), uri]);
+}
+
+#[test]
+fn recent_removal_logs_keep_credentials_out_of_the_default_log() {
+    let _serial = ASYNC_MAIN_CONTEXT_DEFAULT
+        .lock()
+        .expect("the async test lock should not be poisoned");
+    let state = RecentRemovalState::new();
+    let backend = Rc::new(FakeRemovalBackend::new());
+    let uri = "recent://alice:s3cret;domain=CORP@host.example/item?token=abc#frag".to_owned();
+    backend.fail(
+        &uri,
+        "cannot reach sftp://alice:s3cret@host.example/item?token=abc#frag",
+    );
+    let backend_dyn: Rc<dyn RecentRemovalBackend> = backend.clone();
+
+    let output = capture_logs(|| {
+        recent_remove_entries_with_backend(&state, &backend_dyn, [uri.clone()]);
+        drain_until(|| state.in_flight.borrow().is_empty());
+    });
+
+    let warning = crate::test_support::captured_event(&output, "failed to remove recent entry");
+    assert_eq!(warning.split_whitespace().next(), Some("WARN"));
+    assert!(warning.contains("recent://host.example/item"), "{warning}");
+    for secret in ["alice", "s3cret", "CORP", "token", "frag"] {
+        assert!(!output.contains(secret), "{secret} leaked:\n{output}");
+    }
 }
 
 #[test]

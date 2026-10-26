@@ -92,6 +92,20 @@ pub(crate) const GIO_URI_BUILD_FLAGS: gio::glib::UriFlags = gio::glib::UriFlags:
     .union(gio::glib::UriFlags::ENCODED_QUERY)
     .union(gio::glib::UriFlags::ENCODED_FRAGMENT);
 
+/// Removes user-info (including an SMB domain), query, and fragment from a URI for logs.
+pub fn diagnostic_uri(uri: &str) -> String {
+    parse_display_uri(uri)
+        .map(|uri| {
+            uri.to_string_partial(
+                gio::glib::UriHideFlags::USERINFO
+                    | gio::glib::UriHideFlags::QUERY
+                    | gio::glib::UriHideFlags::FRAGMENT,
+            )
+            .to_string()
+        })
+        .unwrap_or_else(|_| "<invalid-uri>".into())
+}
+
 /// Decoded form when the URI is valid UTF-8, otherwise the percent-encoded form GIO produced.
 /// A path with an encoded slash also stays encoded, because decoding it would turn a name
 /// into a path separator when the displayed text is edited and submitted.
@@ -341,20 +355,11 @@ impl Location {
         }
     }
 
-    /// Returns a debug-only location with URI user-info, query, and fragment removed.
+    /// Returns a location with URI user-info, query, and fragment removed, for logs.
     pub fn diagnostic_path(&self) -> String {
         match &self.kind {
             LocationKind::Native(path) => path.to_string_lossy().into_owned(),
-            LocationKind::Uri(uri) => parse_display_uri(uri)
-                .map(|uri| {
-                    uri.to_string_partial(
-                        gio::glib::UriHideFlags::USERINFO
-                            | gio::glib::UriHideFlags::QUERY
-                            | gio::glib::UriHideFlags::FRAGMENT,
-                    )
-                    .to_string()
-                })
-                .unwrap_or_else(|_| "<invalid-uri>".into()),
+            LocationKind::Uri(uri) => diagnostic_uri(uri),
         }
     }
 

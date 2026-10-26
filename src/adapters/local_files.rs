@@ -31,7 +31,7 @@ use crate::{
         mount_watch,
         volume::CoarseTimes,
     },
-    model::{EntryKind, FileEntry, Location, MetadataValue},
+    model::{EntryKind, FileEntry, Location, MetadataValue, diagnostic_uri},
     services::{
         DirectoryChange, DirectoryEvent, DirectoryRequest, DirectoryStamp, Evidence, FileSource,
         IdentityTraits, ItemIdentity, LoadHandle, LocationValidationError, MetadataOutcome,
@@ -1387,21 +1387,22 @@ fn recent_remove_entries_with_backend(
             tracing::warn!("refusing to remove a non-recent URI from the registry");
             continue;
         }
+        let logged = diagnostic_uri(&uri);
         if !state.in_flight.borrow_mut().insert(uri.clone()) {
-            tracing::debug!(uri = %uri, "recent removal already in flight, skipping duplicate");
+            tracing::debug!(uri = %logged, "recent removal already in flight, skipping duplicate");
             continue;
         }
-        tracing::debug!(uri = %uri, "removing recent entry");
+        tracing::debug!(uri = %logged, "removing recent entry");
         let in_flight = state.in_flight.clone();
         let backend = backend.clone();
         glib::MainContext::default().spawn_local(async move {
             let result = backend.delete(&uri).await;
             in_flight.borrow_mut().remove(&uri);
             match result {
-                Ok(()) => tracing::debug!(uri = %uri, "removed recent entry"),
+                Ok(()) => tracing::debug!(uri = %logged, "removed recent entry"),
                 Err(error) => tracing::warn!(
-                    uri = %uri,
-                    error = %error,
+                    uri = %logged,
+                    error = %sanitize_failure_message(&error.to_string()),
                     "failed to remove recent entry; leaving it in the list"
                 ),
             }
@@ -2849,7 +2850,9 @@ fn merge_pending_change(
         (PendingMonitorChange::Rescan, _) | (_, PendingMonitorChange::Rescan) => {
             PendingMonitorChange::Rescan
         }
-        (PendingMonitorChange::Move { .. }, PendingMonitorChange::Upsert(_)) => existing,
+        // An exchange can report arrival before departure; query the name's final state.
+        (PendingMonitorChange::Move { .. }, PendingMonitorChange::Upsert(_))
+        | (PendingMonitorChange::Upsert(_), PendingMonitorChange::Remove(_)) => existing,
         (PendingMonitorChange::Move { .. }, PendingMonitorChange::Remove(_)) => {
             PendingMonitorChange::Rescan
         }

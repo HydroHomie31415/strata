@@ -284,6 +284,10 @@ fn diagnostic_paths_preserve_native_paths_and_redact_remote_secrets() {
         "sftp://example.com/caf%E9"
     );
     assert_eq!(
+        Location::uri("smb://CORP;alice@fileserver.example/share?token=abc#frag").diagnostic_path(),
+        "smb://fileserver.example/share"
+    );
+    assert_eq!(
         Location::uri("not a uri with alice:password@example.com").diagnostic_path(),
         "<invalid-uri>"
     );

@@ -1924,9 +1924,20 @@ impl Browser {
     }
 
     pub fn close_column(self: &Rc<Self>, depth: usize) {
+        self.truncate_columns(depth, true);
+    }
+
+    fn truncate_columns(self: &Rc<Self>, depth: usize, record_history: bool) {
         let _update = self.navigation_update();
         self.close_peek();
-        let closed = self.state.borrow_mut().close_from(depth);
+        let closed = {
+            let mut state = self.state.borrow_mut();
+            if record_history {
+                state.close_from(depth)
+            } else {
+                state.drop_columns_from(depth)
+            }
+        };
         if let Some((parent_depth, position)) = closed {
             if self.pending_navigation_generation().is_some() {
                 self.bump_navigation_generation();

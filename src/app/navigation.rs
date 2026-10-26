@@ -1018,22 +1018,44 @@ impl NavigationState {
                         entry.duration_seconds = previous.duration_seconds.clone();
                     }
                 }
-                if selected_location.as_ref() == Some(&from) {
-                    selected_location = Some(entry.location.clone());
+                // A hidden destination leaves the filtered view, so the cursor moves as on removal.
+                let hides = entry.is_hidden && !preferences.show_hidden;
+                let removed_position = column
+                    .entries
+                    .iter()
+                    .position(|previous| previous.location == from);
+                let follow = (!hides).then(|| entry.location.clone());
+                if follow.is_some() {
+                    column
+                        .selected_locations
+                        .relocate(&from, entry.location.clone());
+                } else {
+                    column.selected_locations.remove(&from);
                 }
-                column
-                    .selected_locations
-                    .relocate(&from, entry.location.clone());
                 for target in [
                     &mut column.selection_target,
                     &mut column.selection_anchor,
                     &mut column.load_cursor,
                 ] {
                     if target.as_ref() == Some(&from) {
-                        *target = Some(entry.location.clone());
+                        *target = follow.clone();
                     }
                 }
                 remove_monitored_entry(&mut column.entries, &from, &mut splices);
+                if selected_location.as_ref() == Some(&from) {
+                    selected_location = follow.or_else(|| {
+                        removed_position
+                            .and_then(|position| column.visible_neighbor(position))
+                            .and_then(|index| column.entries.get(index))
+                            .map(|neighbor| neighbor.location.clone())
+                    });
+                    if hides
+                        && !self.preserve_fill_on_removal
+                        && let Some(ref replacement) = selected_location
+                    {
+                        column.selected_locations.insert(replacement.clone());
+                    }
+                }
                 upsert_monitored_entry(&mut column.entries, entry, preferences, &mut splices);
             }
             DirectoryChange::Rescan => return None,
@@ -2209,6 +2231,14 @@ impl NavigationState {
             return None;
         }
         self.record_navigation();
+        self.drop_columns_from(depth)
+    }
+
+    /// Like `close_from`, without a history entry.
+    pub fn drop_columns_from(&mut self, depth: usize) -> Option<(usize, Option<usize>)> {
+        if depth == 0 || depth >= self.columns.len() {
+            return None;
+        }
         self.peek = None;
         self.visual = None;
         self.columns.truncate(depth);

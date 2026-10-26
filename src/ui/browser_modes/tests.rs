@@ -121,6 +121,32 @@ fn typed_entry(name: &str, kind: crate::model::EntryKind) -> FileEntry {
 }
 
 #[test]
+fn filtered_file_clicks_never_open_chooser_or_trashed_files() {
+    use ClickCount::{One, Two};
+    use FilteredFileClick::{Ignore, Open, Preview};
+    let local = typed_entry("note.txt", crate::model::EntryKind::File);
+    let trashed = FileEntry {
+        location: Location::uri("trash:///note.txt"),
+        ..local.clone()
+    };
+    for (entry, chooser, previews, files, expected) in [
+        (&local, false, true, One, Open),
+        (&local, false, true, Two, Preview),
+        (&local, false, false, Two, Ignore),
+        (&local, true, true, One, Preview),
+        (&trashed, false, true, One, Preview),
+        (&trashed, false, false, One, Ignore),
+    ] {
+        assert_eq!(
+            filtered_file_click(entry, chooser, previews, files),
+            expected,
+            "{:?} chooser={chooser} previews={previews} files={files:?}",
+            entry.location
+        );
+    }
+}
+
+#[test]
 fn type_groups_order_chunked_rows_and_follow_sort_preference_changes() {
     use crate::model::{EntryKind, ViewPreferences};
     crate::test_support::gtk_test(

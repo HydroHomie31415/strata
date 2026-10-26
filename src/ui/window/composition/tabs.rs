@@ -251,14 +251,14 @@ impl TabWindow {
         if self.blocked() || self.window.upgrade().is_none() {
             return;
         }
-        tracing::debug!(location = %location.display_path(), "opening location in new tab");
+        tracing::debug!(location = %location.diagnostic_path(), "opening location in new tab");
         self.add(None);
         super::super::open_argument::route_location(self.active_browser(), location);
     }
 
     fn open_in_new_window(self: &Rc<Self>, location: Location) -> Option<BrowserView> {
         let application = self.window.upgrade()?.application()?;
-        tracing::debug!(location = %location.display_path(), "opening location in new window");
+        tracing::debug!(location = %location.diagnostic_path(), "opening location in new window");
         Some(super::super::open_argument::present_location_window(
             &application,
             location,

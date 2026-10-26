@@ -1827,16 +1827,16 @@ impl ModeViews {
             pane.stack.grab_focus();
             return;
         }
-        let target = self
+        let focused = self
             .browser
             .focused_item()
-            .filter(|(focused_depth, _, _)| *focused_depth == depth)
-            .and_then(|(_, source, _)| {
-                pane.item_sections().into_iter().find_map(|section| {
-                    let position = section.source_to_view(&pane.model, source)?;
-                    (position < section.view_model.n_items()).then_some((section.view, position))
-                })
-            });
+            .filter(|(focused_depth, _, _)| *focused_depth == depth);
+        let target = focused.as_ref().and_then(|(_, source, _)| {
+            pane.item_sections().into_iter().find_map(|section| {
+                let position = section.source_to_view(&pane.model, *source)?;
+                (position < section.view_model.n_items()).then_some((section.view, position))
+            })
+        });
         let (view, position) = target.map_or_else(
             || (pane.focus_view(), None),
             |(view, position)| (view, Some(position)),
@@ -1860,13 +1860,14 @@ impl ModeViews {
                     .into_iter()
                     .find(|section| section.view == view)
                     .map(|section| section.bound_items.clone())
+                && let Some((depth, source, entry)) = focused
             {
                 focus_collection_cursor_when_bound(
                     view.downgrade(),
                     items,
                     position,
-                    self.cursor_focus_generation.clone(),
-                    generation,
+                    Rc::downgrade(&self.browser),
+                    (depth, source, entry.location),
                 );
             }
             return;
@@ -2266,6 +2267,8 @@ struct ModeClickOptions {
 fn search_collection_options(
     presentation: super::inline_search::SearchPresentation,
     browser: &Rc<Browser>,
+    previews: Rc<Cell<bool>>,
+    activation: Rc<Cell<ClickActivation>>,
     multiple_selection: Rc<Cell<bool>>,
     selection_handlers: super::inline_search::SearchSelectionHandlers,
     context_state: Rc<RefCell<Option<Weak<super::browser::ViewState>>>>,
@@ -2282,18 +2285,29 @@ fn search_collection_options(
         }
     });
     let weak_browser = Rc::downgrade(browser);
-    let single_click = Rc::new(move |entry: FileEntry| {
+    let pointer_click = Rc::new(move |entry: FileEntry, presses: i32| {
         let Some(browser) = weak_browser.upgrade() else {
             return;
         };
-        if browser.is_chooser_mode() {
-            if entry.is_directory() {
+        if entry.is_directory() {
+            if presses == 1 {
                 browser.navigate(entry.location);
             }
-        } else if entry.is_directory() {
-            browser.navigate(entry.location);
-        } else {
-            browser.open_location(entry.location);
+            return;
+        }
+        let chooser = browser.is_chooser_mode();
+        let files = activation.get().files;
+        if presses >= 2 {
+            // With one-click files the first press already opened it.
+            if !chooser && files != ClickCount::One {
+                browser.open_location(entry.location);
+            }
+            return;
+        }
+        match filtered_file_click(&entry, chooser, previews.get(), files) {
+            FilteredFileClick::Open => browser.open_location(entry.location),
+            FilteredFileClick::Preview => browser.request_preview(entry),
+            FilteredFileClick::Ignore => {}
         }
     });
     let focus_state = context_state.clone();
@@ -2316,7 +2330,7 @@ fn search_collection_options(
         presentation,
         multiple_selection,
         activate,
-        single_click,
+        pointer_click,
         selection_changed,
         focus_items,
         results_changed,
@@ -2362,6 +2376,7 @@ pub(crate) fn filter_controls(tooltip: &str) -> (gtk::Entry, gtk::Revealer, gtk:
         crate::assets::icons::FUNNEL,
     )));
     super::accessibility::set_label(&button, &label);
+    super::accessibility::set_label(&entry, &label);
     crate::ui::controls::pane_header_action(&button);
     let shown_filter = revealer.clone();
     let focused_filter = entry.clone();
@@ -2419,6 +2434,7 @@ fn icons_controls(browser: &Rc<Browser>, depth: usize, thumbnail_size: i32) -> I
     large.set_xalign(1.0);
     thumbnail_extremes.append(&small);
     thumbnail_extremes.append(&large);
+    crate::ui::accessibility::set_labelled_by(&thumbnail_scale, &[thumbnail_title.upcast_ref()]);
     thumbnail_content.append(&thumbnail_heading);
     thumbnail_content.append(&thumbnail_scale);
     thumbnail_content.append(&thumbnail_extremes);
@@ -2806,6 +2822,8 @@ fn build_icons_pane(
                 max_columns: density_icons_columns(context.density.get()),
             },
             &context.browser,
+            context.click.previews.clone(),
+            context.click.activation.clone(),
             context.click.multiple_selection.clone(),
             search_selection_handlers,
             options.search_context_state.clone(),
@@ -3807,13 +3825,11 @@ fn list_navigation(browser: &Rc<Browser>) -> gtk::Box {
             browser.can_go_parent(),
         ),
     ] {
-        let button = gtk::Button::builder()
-            .tooltip_text(super::shortcut_reference::with_keys(
-                tooltip,
-                Keys::One(binding),
-            ))
-            .sensitive(available)
-            .build();
+        let button = gtk::Button::builder().sensitive(available).build();
+        super::accessibility::set_tooltip_and_label(
+            &button,
+            &super::shortcut_reference::with_keys(tooltip, Keys::One(binding)),
+        );
         button.set_child(Some(&crate::assets::chrome_icon(icon)));
         button.add_css_class("list-navigation-button");
         button.set_cursor_from_name(Some("pointer"));
@@ -3879,10 +3895,8 @@ fn build_list_pane(
 
     let columns_popover =
         column_options::create_column_options_popover(&headings, &columns, &bound_items);
-    let columns_menu = gtk::MenuButton::builder()
-        .tooltip_text(crate::i18n::tr("Columns"))
-        .popover(&columns_popover)
-        .build();
+    let columns_menu = gtk::MenuButton::builder().popover(&columns_popover).build();
+    super::accessibility::set_tooltip_and_label(&columns_menu, &crate::i18n::tr("Columns"));
     columns_menu.set_child(Some(&crate::assets::chrome_icon(
         crate::assets::icons::COLUMNS,
     )));
@@ -3972,8 +3986,8 @@ fn build_list_pane(
         },
         selection: selection.clone(),
         syncing: syncing_selection.clone(),
-        previews: click_options.previews,
-        activation: click_options.activation,
+        previews: click_options.previews.clone(),
+        activation: click_options.activation.clone(),
         transfers: transfer_handler.clone(),
         marks: clipboard_marks.clone(),
         columns: columns.clone(),
@@ -4138,6 +4152,8 @@ fn build_list_pane(
         search_collection_options(
             super::inline_search::SearchPresentation::Rows,
             &browser,
+            click_options.previews.clone(),
+            click_options.activation.clone(),
             click_options.multiple_selection.clone(),
             search_selection_handlers,
             options.search_context_state.clone(),
@@ -5232,18 +5248,21 @@ fn install_preview_click(
         };
         if should_activate_filtered_pointer(press_count, &filter_query) {
             gesture.set_state(gtk::EventSequenceState::Claimed);
-            if press_count == 1 {
-                browser.select(depth, position);
-                if (!browser.is_chooser_mode() || entry.is_directory())
-                    && (!is_trash_location(&entry.location) || entry.is_directory())
-                {
-                    browser.activate_in_place(depth, position);
-                } else if enabled.get()
-                    && !entry.is_directory()
-                    && super::preview::entry_supports_quick_preview(&entry)
-                {
-                    browser.preview(depth, position);
-                }
+            browser.select(depth, position);
+            let click = if entry.is_directory() {
+                FilteredFileClick::Open
+            } else {
+                filtered_file_click(
+                    &entry,
+                    browser.is_chooser_mode(),
+                    enabled.get(),
+                    click_activation.get().files,
+                )
+            };
+            match click {
+                FilteredFileClick::Open => browser.activate_in_place(depth, position),
+                FilteredFileClick::Preview => browser.preview(depth, position),
+                FilteredFileClick::Ignore => {}
             }
             return;
         }
@@ -5279,6 +5298,30 @@ fn install_preview_click(
         }
     });
     widget.add_controller(click);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum FilteredFileClick {
+    Open,
+    Preview,
+    Ignore,
+}
+
+/// One plain click on a filtered file follows the unfiltered click-count and
+/// preview rules, except that chooser and trashed files never open from it.
+pub(super) fn filtered_file_click(
+    entry: &FileEntry,
+    chooser: bool,
+    previews: bool,
+    files: ClickCount,
+) -> FilteredFileClick {
+    if files == ClickCount::One && !chooser && !is_trash_location(&entry.location) {
+        FilteredFileClick::Open
+    } else if previews && super::preview::entry_supports_quick_preview(entry) {
+        FilteredFileClick::Preview
+    } else {
+        FilteredFileClick::Ignore
+    }
 }
 
 fn should_activate_filtered_pointer(press_count: i32, query: &RefCell<String>) -> bool {
@@ -5470,14 +5513,24 @@ fn focus_collection_cursor_when_bound(
     view: glib::object::WeakRef<gtk::Widget>,
     items: Rc<RefCell<Vec<BoundModeItem>>>,
     position: u32,
-    current_generation: Rc<Cell<u64>>,
-    generation: u64,
+    browser: Weak<Browser>,
+    expected: (usize, usize, Location),
 ) {
+    // A later input or splice supersedes this cursor even when focus stays in the same view.
+    let is_current = move || {
+        browser.upgrade().is_some_and(|browser| {
+            browser
+                .focused_item()
+                .is_some_and(|(depth, source, entry)| {
+                    depth == expected.0 && source == expected.1 && entry.location == expected.2
+                })
+        })
+    };
     glib::idle_add_local_once(move || {
         let Some(view) = view.upgrade() else {
             return;
         };
-        if current_generation.get() != generation || !collection_keeps_cursor(&view) {
+        if !is_current() || !collection_keeps_cursor(&view) {
             return;
         }
         if focus_bound_cursor(&items, position) {
@@ -5486,7 +5539,7 @@ fn focus_collection_cursor_when_bound(
         let frames = Cell::new(0u8);
         let items = items.clone();
         view.add_tick_callback(move |view, _| {
-            if current_generation.get() != generation
+            if !is_current()
                 || !collection_keeps_cursor(view)
                 || focus_bound_cursor(&items, position)
                 || frames.get() >= 8

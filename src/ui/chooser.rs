@@ -1740,12 +1740,14 @@ fn build_chooser_hosted(
     header_content.set_valign(gtk::Align::Center);
     header_content.append(&sidebar_toggle);
     header_content.append(&location);
-    let close = gtk::Button::builder()
-        .tooltip_text(crate::ui::shortcut_reference::with_keys(
+    let close = gtk::Button::new();
+    crate::ui::accessibility::set_tooltip_and_label(
+        &close,
+        &crate::ui::shortcut_reference::with_keys(
             "Cancel file selection (%{keys})",
             crate::ui::keys::Keys::One(crate::ui::keys::bindings::ESCAPE),
-        ))
-        .build();
+        ),
+    );
     close.set_child(Some(&crate::assets::chrome_icon(crate::assets::icons::X)));
     close.add_css_class("header-action");
     let closing_window = window.downgrade();
@@ -1818,6 +1820,7 @@ fn build_chooser_hosted(
             let entry = form_entry();
             entry.set_hexpand(true);
             entry.set_placeholder_text(Some(&crate::i18n::tr("Enter a filename")));
+            crate::ui::accessibility::set_label(&entry, &crate::i18n::tr("Name"));
             if let Some(name) = current_name {
                 entry.set_text(&name.to_string_lossy());
                 entry.select_region(0, -1);
@@ -1845,6 +1848,7 @@ fn build_chooser_hosted(
             let entry = form_entry();
             entry.set_hexpand(true);
             entry.set_placeholder_text(Some(&crate::i18n::tr("Enter a filename or https:// URL")));
+            crate::ui::accessibility::set_label(&entry, &crate::i18n::tr("Name"));
             row.append(&entry);
             details.append(&row);
             Some(entry)
