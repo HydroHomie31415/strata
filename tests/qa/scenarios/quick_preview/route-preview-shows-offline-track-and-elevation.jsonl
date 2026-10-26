@@ -14,11 +14,10 @@
 {"wait":{"state":{"target":{"role":"toggle button","name":"Play or pause","within":{"preview":true}},"pressed":true}},"message":"explicit play resumes from the hovered position"}
 {"move":{"role":"image","name":"Route preview","within":{"preview":true}},"at":["45%","5%"]}
 {"wait":{"all":[{"state":{"target":{"role":"toggle button","name":"Play or pause","within":{"preview":true}},"pressed":false}},{"description":{"target":{"role":"image","name":"Route preview","within":{"preview":true}},"text":"0.6 km"}},{"description":{"target":{"role":"image","name":"Elevation profile","within":{"preview":true}},"text":"0.6 km"}},{"preview":"20 m"}]},"message":"route hover pauses and selects the matching elevation"}
-{"move":{"role":"image","name":"Elevation profile","within":{"preview":true}},"at":["99%","50%"]}
-{"wait":{"state":{"target":{"role":"toggle button","name":"Play or pause","within":{"preview":true}},"pressed":false}},"message":"moving between the plots leaves playback paused"}
+{"move":{"role":"image","name":"Elevation profile","within":{"preview":true}},"at":["80%","50%"]}
+{"wait":{"all":[{"state":{"target":{"role":"toggle button","name":"Play or pause","within":{"preview":true}},"pressed":false}},{"description":{"target":{"role":"image","name":"Route preview","within":{"preview":true}},"text":"0.5 km"}}]},"message":"seeking near the route end pauses at a position distinguishable from the endpoint"}
 {"key":"ctrl+alt+space"}
-{"wait":{"state":{"target":{"role":"toggle button","name":"Play or pause","within":{"preview":true}},"pressed":true}},"message":"play resumes near the route end"}
-{"wait":{"all":[{"state":{"target":{"role":"toggle button","name":"Play or pause","within":{"preview":true}},"pressed":false}},{"description":{"target":{"role":"image","name":"Route preview","within":{"preview":true}},"text":"0.6 km"}}]},"message":"playback stops at the route end"}
+{"wait":{"all":[{"state":{"target":{"role":"toggle button","name":"Play or pause","within":{"preview":true}},"pressed":false}},{"description":{"target":{"role":"image","name":"Route preview","within":{"preview":true}},"text":"0.6 km"}}]},"message":"playback advances from the near-end seek and stops at the endpoint"}
 {"key":"ctrl+alt+space"}
 {"wait":{"state":{"target":{"role":"toggle button","name":"Play or pause","within":{"preview":true}},"pressed":true}},"message":"play restarts a completed route"}
 {"select":{"entry":"no-altitude.gpx"}}
