@@ -267,7 +267,8 @@ type ViewSources = ((u64, u64), Vec<u32>);
 /// Filter, sort, and flatten models preserve item identity across position changes.
 #[derive(Clone, Default)]
 struct SourceIndexMap {
-    by_item: Rc<RefCell<HashMap<glib::Object, usize>>>,
+    model: glib::WeakRef<gio::ListModel>,
+    by_item: Rc<RefCell<Option<HashMap<glib::Object, usize>>>>,
     generation: Rc<Cell<u64>>,
     // Reading a filter model's item walks its match set, so selections map through this.
     sources: Rc<RefCell<Option<ViewSources>>>,
@@ -276,76 +277,77 @@ struct SourceIndexMap {
 impl SourceIndexMap {
     fn watch(source: &impl IsA<gio::ListModel>) -> Self {
         let source = source.as_ref();
-        let map = Self::default();
+        let map = Self {
+            model: source.downgrade(),
+            ..Self::default()
+        };
         let tracked = map.clone();
         // Capturing the model here would keep it alive through its own signal.
         source.connect_items_changed(move |source, position, removed, added| {
             tracked.apply(source, position, removed, added);
         });
-        map.rebuild(source);
+        map.ensure_current();
         map
     }
 
     fn apply(&self, source: &gio::ListModel, position: u32, removed: u32, added: u32) {
-        self.generation.set(self.generation.get().wrapping_add(1));
-        let can_append = {
-            let by_item = self.by_item.borrow();
-            removed == 0
-                && position == by_item.len() as u32
-                && position.saturating_add(added) == source.n_items()
-        };
-        if can_append {
-            let mut by_item = self.by_item.borrow_mut();
-            for index in position..position.saturating_add(added) {
-                if let Some(item) = source.item(index) {
-                    by_item.insert(item, index as usize);
-                }
-            }
+        let generation = self.generation.get().wrapping_add(1);
+        self.generation.set(generation);
+        let total = source.n_items();
+        if total == 0 {
+            *self.by_item.borrow_mut() = Some(HashMap::new());
             return;
         }
-        let mut by_item = self.by_item.borrow_mut();
-        let previous_count = source.n_items() - added + removed;
-        if by_item.len() != previous_count as usize || (position == 0 && removed == previous_count)
+        let can_append = removed == 0
+            && position.saturating_add(added) == total
+            && self
+                .by_item
+                .borrow()
+                .as_ref()
+                .is_some_and(|by_item| position == by_item.len() as u32);
+        if !can_append {
+            // A grouped insertion can replace almost the whole view. Coalesce
+            // those ranges until a caller actually needs a reverse lookup.
+            self.by_item.borrow_mut().take();
+            return;
+        }
+        let arrivals: Vec<_> = (position..position.saturating_add(added))
+            .filter_map(|index| source.item(index).map(|item| (item, index as usize)))
+            .collect();
+        if self.generation.get() == generation
+            && let Some(by_item) = self.by_item.borrow_mut().as_mut()
         {
-            drop(by_item);
-            self.rebuild(source);
-            return;
-        }
-        let end = position.saturating_add(removed) as usize;
-        by_item.retain(|_, index| {
-            if *index < position as usize {
-                true
-            } else if *index < end {
-                false
-            } else {
-                *index = *index - removed as usize + added as usize;
-                true
-            }
-        });
-        for index in position..position.saturating_add(added) {
-            if let Some(item) = source.item(index) {
-                by_item
-                    .entry(item)
-                    .and_modify(|last| *last = (*last).max(index as usize))
-                    .or_insert(index as usize);
-            }
+            by_item.extend(arrivals);
         }
     }
 
-    fn rebuild(&self, source: &gio::ListModel) {
-        self.generation.set(self.generation.get().wrapping_add(1));
-        let n_items = source.n_items() as usize;
-        let mut by_item = HashMap::with_capacity(n_items);
+    fn ensure_current(&self) -> bool {
+        let Some(source) = self.model.upgrade() else {
+            return false;
+        };
+        if self.by_item.borrow().is_some() {
+            return true;
+        }
+        let generation = self.generation.get();
+        let mut by_item = HashMap::with_capacity(source.n_items() as usize);
         for position in 0..source.n_items() {
             if let Some(item) = source.item(position) {
                 by_item.insert(item, position as usize);
             }
         }
-        *self.by_item.borrow_mut() = by_item;
+        // A custom model may emit another change while resolving its items.
+        if self.generation.get() != generation {
+            return false;
+        }
+        *self.by_item.borrow_mut() = Some(by_item);
+        true
     }
 
     fn of_item(&self, item: &glib::Object) -> Option<usize> {
-        self.by_item.borrow().get(item).copied()
+        if !self.ensure_current() {
+            return None;
+        }
+        self.by_item.borrow().as_ref()?.get(item).copied()
     }
 
     fn of_view_position(&self, view: &impl IsA<gio::ListModel>, position: u32) -> Option<usize> {
@@ -360,6 +362,13 @@ impl SourceIndexMap {
         positions: impl Iterator<Item = u32>,
     ) -> Vec<Option<usize>> {
         const UNMAPPED: u32 = u32::MAX;
+        let mut positions = positions.peekable();
+        if positions.peek().is_none() {
+            return Vec::new();
+        }
+        if !self.ensure_current() || !source.ensure_current() {
+            return positions.map(|_| None).collect();
+        }
         let key = (self.generation.get(), source.generation.get());
         let mut cache = self.sources.borrow_mut();
         let forward = match &mut *cache {
@@ -367,7 +376,13 @@ impl SourceIndexMap {
             slot => {
                 let mut forward = vec![UNMAPPED; view.n_items() as usize];
                 let by_source_item = source.by_item.borrow();
-                for (item, position) in self.by_item.borrow().iter() {
+                let by_view_item = self.by_item.borrow();
+                let (Some(by_source_item), Some(by_view_item)) =
+                    (by_source_item.as_ref(), by_view_item.as_ref())
+                else {
+                    return positions.map(|_| None).collect();
+                };
+                for (item, position) in by_view_item {
                     if let Some(slot) = forward.get_mut(*position)
                         && let Some(source) = by_source_item
                             .get(item)
