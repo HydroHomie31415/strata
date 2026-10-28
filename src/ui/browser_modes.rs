@@ -30,6 +30,7 @@ use crate::ui::preferences::ListColumnId;
 
 mod column_options;
 mod events;
+mod grouped_model;
 mod list_factory;
 mod navigation;
 #[cfg(test)]
@@ -263,6 +264,7 @@ struct SlowClickRename {
 
 /// A view's source positions by view position, built for the two maps' generations.
 type ViewSources = ((u64, u64), Vec<u32>);
+const SPARSE_LOOKUP_LIMIT: usize = 64;
 
 /// Filter, sort, and flatten models preserve item identity across position changes.
 #[derive(Clone, Default)]
@@ -286,7 +288,9 @@ impl SourceIndexMap {
         source.connect_items_changed(move |source, position, removed, added| {
             tracked.apply(source, position, removed, added);
         });
-        map.ensure_current();
+        if source.n_items() == 0 || !source.is::<grouped_model::GroupedModel>() {
+            map.ensure_current();
+        }
         map
     }
 
@@ -344,6 +348,13 @@ impl SourceIndexMap {
     }
 
     fn of_item(&self, item: &glib::Object) -> Option<usize> {
+        let model = self.model.upgrade()?;
+        if let Some(by_item) = self.by_item.borrow().as_ref() {
+            return by_item.get(item).copied();
+        }
+        if let Some(grouped) = model.downcast_ref::<grouped_model::GroupedModel>() {
+            return grouped.position_of(item).map(|position| position as usize);
+        }
         if !self.ensure_current() {
             return None;
         }
@@ -362,10 +373,16 @@ impl SourceIndexMap {
         positions: impl Iterator<Item = u32>,
     ) -> Vec<Option<usize>> {
         const UNMAPPED: u32 = u32::MAX;
-        let mut positions = positions.peekable();
-        if positions.peek().is_none() {
-            return Vec::new();
+        let mut positions = positions;
+        let first: Vec<_> = positions.by_ref().take(SPARSE_LOOKUP_LIMIT + 1).collect();
+        // A cursor or small selection must not rebuild the entire view index.
+        if first.len() <= SPARSE_LOOKUP_LIMIT {
+            return first
+                .into_iter()
+                .map(|position| source.of_view_position(view, position))
+                .collect();
         }
+        let positions = first.into_iter().chain(positions);
         if !self.ensure_current() || !source.ensure_current() {
             return positions.map(|_| None).collect();
         }
@@ -3963,15 +3980,13 @@ fn build_list_pane(
         options.state.clone(),
         enter_target.clone(),
     );
-    let view_model =
-        gtk::SortListModel::new(Some(filtered_model.clone()), None::<gtk::CustomSorter>);
     let type_group_sorter = options
         .group_by_type
         .then(|| pane_type_group_sorter(&browser, depth));
-    if let Some(sorter) = &type_group_sorter {
-        view_model.set_sorter(Some(&sorter.sorter));
-        view_model.set_section_sorter(Some(&sorter.sorter));
-    }
+    let view_model = grouped_model::GroupedModel::new(
+        &filtered_model,
+        type_group_sorter.as_ref().map(|sorter| &sorter.sorter),
+    );
     let view_model_object = view_model.clone().upcast::<gio::ListModel>();
     let view_index = SourceIndexMap::watch(&view_model_object);
     let selection = gtk::MultiSelection::new(Some(view_model.clone()));
@@ -5102,6 +5117,9 @@ fn view_position_for_source(
         return Some(position as u32);
     };
     let item = source.item(position as u32)?;
+    if let Some(grouped) = filtered.downcast_ref::<grouped_model::GroupedModel>() {
+        return grouped.position_of(&item);
+    }
     let guessed = position as u32;
     // Unfiltered views keep source order.
     if filtered.item(guessed).is_some_and(|value| value == item) {
@@ -5472,6 +5490,9 @@ fn set_selections(pane: &Pane, positions: &[usize]) {
         let selected = if all_selected && section.view_model.n_items() == pane.model.n_items() {
             gtk::Bitset::new_range(0, total_items)
         } else {
+            if positions.len() > SPARSE_LOOKUP_LIMIT {
+                section.view_index.ensure_current();
+            }
             let selected = gtk::Bitset::new_empty();
             for position in positions {
                 if let Some(position) = section.source_to_view(&pane.model, *position) {

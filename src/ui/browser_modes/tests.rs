@@ -162,6 +162,36 @@ fn chunked_type_groups_do_not_eagerly_read_replaced_ranges() {
 }
 
 #[test]
+fn single_row_selection_does_not_scan_the_whole_view() {
+    crate::test_support::gtk_test(
+        "ui::browser_modes::tests::single_row_selection_does_not_scan_the_whole_view",
+        || {
+            let values: Vec<_> = (0..4096).map(|i| format!("{i:06}")).collect();
+            let values: Vec<_> = values.iter().map(String::as_str).collect();
+            let source = gtk::StringList::new(&values);
+            let source_index = SourceIndexMap::watch(&source);
+            let sorter =
+                gtk::CustomSorter::new(|left, right| item_name(right).cmp(&item_name(left)).into());
+            let sorted = gtk::SortListModel::new(Some(source.clone()), Some(sorter));
+            let counted = counting_model::CountingModel::new(&sorted);
+            let view = counted.clone().upcast::<gio::ListModel>();
+            let view_index = SourceIndexMap::watch(&view);
+            source.append("zz");
+            let before = counted.reads();
+            assert_eq!(
+                view_index.sources_of(&source_index, &view, std::iter::once(0)),
+                [Some(4096)]
+            );
+            assert!(
+                counted.reads() - before <= 2,
+                "one selected row caused {} view reads",
+                counted.reads() - before
+            );
+        },
+    );
+}
+
+#[test]
 fn scroll_refresh_waits_for_scrolling_to_stop() {
     crate::test_support::gtk_test(
         "ui::browser_modes::tests::scroll_refresh_waits_for_scrolling_to_stop",
@@ -208,7 +238,7 @@ fn scroll_refresh_waits_for_scrolling_to_stop() {
     );
 }
 
-fn typed_entry(name: &str, kind: crate::model::EntryKind) -> FileEntry {
+pub(super) fn typed_entry(name: &str, kind: crate::model::EntryKind) -> FileEntry {
     FileEntry {
         location: Location::local(format!("/fixture/{name}")),
         thumbnail_path: None,
