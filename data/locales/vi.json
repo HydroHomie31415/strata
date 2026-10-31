@@ -1524,5 +1524,7 @@
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} ft",
   "%{elevation} m": "%{elevation} m",
   "%{elevation} ft": "%{elevation} ft",
-  "No action": "Không có hành động"
+  "No action": "Không có hành động",
+  "Valent": "Valent",
+  "Send files to paired phones and browse their files with Valent.": "Gửi tệp đến điện thoại đã ghép đôi và duyệt tệp của chúng bằng Valent."
 }

@@ -10,6 +10,10 @@ removes it on request.
 Providers run with the user's permissions, outside any sandbox. Review every
 contribution as you would a program the user is asked to run.
 
+For phone file sharing, choose the integration matching your desktop service:
+[KDE Connect](kdeconnect/README.md) or [Valent](valent/README.md). Valent also
+offers remote phone folders through its SFTP plugin.
+
 ## Layout
 
 ```text

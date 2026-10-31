@@ -1524,5 +1524,7 @@
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} pies",
   "%{elevation} m": "%{elevation} m",
   "%{elevation} ft": "%{elevation} pies",
-  "No action": "Ninguna acción"
+  "No action": "Ninguna acción",
+  "Valent": "Valent",
+  "Send files to paired phones and browse their files with Valent.": "Envía archivos a teléfonos vinculados y explora sus archivos con Valent."
 }

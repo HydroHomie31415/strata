@@ -1524,5 +1524,7 @@
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} 英尺",
   "%{elevation} m": "%{elevation} m",
   "%{elevation} ft": "%{elevation} 英尺",
-  "No action": "无操作"
+  "No action": "无操作",
+  "Valent": "Valent",
+  "Send files to paired phones and browse their files with Valent.": "通过 Valent 向已配对的手机发送文件，并浏览手机文件。"
 }
