@@ -1524,5 +1524,7 @@
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum}피트",
   "%{elevation} m": "%{elevation} m",
   "%{elevation} ft": "%{elevation} 피트",
-  "No action": "동작 없음"
+  "No action": "동작 없음",
+  "Valent": "Valent",
+  "Send files to paired phones and browse their files with Valent.": "Valent로 페어링된 휴대전화에 파일을 보내고 휴대전화 파일을 탐색합니다."
 }
