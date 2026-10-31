@@ -122,7 +122,7 @@ def menu_locations(model, variant_type, depth=0, budget=None, retained=None):
 
 
 class Valent:
-    def __init__(self, changed=lambda: None):
+    def __init__(self, changed=lambda: None, open_destination=None):
         from gi.repository import Gio, GLib
 
         self.Gio, self.GLib = Gio, GLib
@@ -131,6 +131,7 @@ class Valent:
         self.models = {}
         self.links = {}
         self.pending = {}
+        self.open_destination = open_destination
 
     def connect(self):
         if self.connection is not None and not self.connection.is_closed():
@@ -237,6 +238,11 @@ class Valent:
         return result
 
     def open_location(self, uri, deadline):
+        if self.open_destination is not None:
+            owner, path = self.open_destination
+            self.call(owner, path, STRATA + ".ValentSidebar", "Open",
+                      self.GLib.Variant("(s)", (uri,)), "()", deadline)
+            return
         self.call(
             self.owner(STRATA, deadline), "/io/github/lgse/Strata", "org.freedesktop.Application", "Open",
             self.GLib.Variant("(asa{sv})", ([uri], {})), "()", deadline,
@@ -420,7 +426,7 @@ class Provider:
 
 
 def main(backend=None):
-    from gi.repository import GLib
+    from gi.repository import Gio, GLib
 
     loop = GLib.MainLoop()
 
@@ -430,7 +436,14 @@ def main(backend=None):
     def changed():
         emit(provider.invalidate())
 
-    provider = Provider(backend if backend is not None else Valent(changed))
+    destination = None
+    if backend is None and len(sys.argv) > 1:
+        if (len(sys.argv) != 4 or sys.argv[1] != "--open-destination"
+                or not Gio.dbus_is_unique_name(sys.argv[2])
+                or not GLib.Variant.is_object_path(sys.argv[3])):
+            raise SystemExit(2)
+        destination = (sys.argv[2], sys.argv[3])
+    provider = Provider(backend if backend is not None else Valent(changed, destination))
     buffer = bytearray()
     os.set_blocking(sys.stdin.fileno(), False)
 
