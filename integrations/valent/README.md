@@ -12,6 +12,11 @@ sharing plugins must be enabled in Valent and on the phone.
 - Select local files and choose **Send to… → Valent → your phone**. The entire
   selection is submitted once; Valent shows transfer progress and results.
   Submission does not prove delivery to the phone.
+- Your connected phone appears under **Devices** in the sidebar. Click its name
+  to mount and open its files in that window. If it exports several storage locations, the row
+  opens the first; the browsing menu below lists each location individually.
+  The row follows connection changes and the integration's enabled state. Phone
+  browsing is unavailable in file chooser windows and local-only sessions.
 - Right-click a folder background or an item and choose
   **Browse phone files → your phone** in the Valent section. Valent mounts its
   SFTP storage; the provider opens the first exported folder in Strata. Once
@@ -103,7 +108,16 @@ exports real Gio action groups, menus and application interfaces on a private
 session bus. It records requests without reading selected content, transferring
 files, mounting a phone or using the desktop session bus.
 
-Existing file-provider QA scenarios cover Strata's shared menu renderer. This
-integration does not change that renderer or add a separate GUI test. Mocked
+The `valent-sidebar-opens-phone-files` QA scenario covers pointer activation,
+mount and storage tokens, disconnection and disabling. Targeted Rust tests under
+`ui::window::valent::` also cover lifecycle changes and URI validation. Existing
+file-provider scenarios cover the unchanged shared menu renderer. Mocked
 acceptance does not establish physical delivery: send disposable files and
 verify them on the phone before using it for documents.
+
+Sidebar providers run with an internal `--open-destination` argument naming a
+unique session-bus connection and a per-window object. After validating the
+phone's exported URI, the provider returns it there, so a click navigates the
+originating window. Only SFTP locations during a pending click are accepted;
+closing the window unregisters the endpoint. Context-menu browsing retains the
+normal Strata application open interface.

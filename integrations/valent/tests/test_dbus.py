@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from gi.repository import Gio, GLib
@@ -93,6 +94,28 @@ class DBusTests(unittest.TestCase):
         self.assertEqual(self.recorded(), [{"device": PHONE, "action": "sftp.browse", "parameter": None},
                                            {"open": [URI]}])
         self.assertEqual(self.backend.pending, {})
+
+    def test_sidebar_open_returns_to_its_unique_window_endpoint(self):
+        path = "/io/github/lgse/Strata/ValentSidebar/test_window"
+        name = "io.github.lgse.Strata.ValentSidebar"
+        interface = Gio.DBusNodeInfo.new_for_xml(
+            "<node><interface name='" + name + "'><method name='Open'>"
+            "<arg type='s' direction='in'/></method></interface></node>").interfaces[0]
+        opened = []
+
+        def call(connection, sender, object_path, interface_name, method, parameters, invocation):
+            opened.append(parameters.unpack()[0])
+            invocation.return_value(None)
+
+        registration = self.connection.register_object(path, interface, call, None, None)
+        self.addCleanup(self.connection.unregister_object, registration)
+        self.backend.open_destination = (self.connection.get_unique_name(), path)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self.backend.open_location, URI, time.monotonic() + 5)
+            wait_until(future.done)
+            future.result()
+        self.assertEqual(opened, [URI])
+        self.assertEqual(self.recorded(), [])
 
     def test_disconnect_invalidates_menus_and_old_tickets_reject(self):
         provider = Provider(self.backend)

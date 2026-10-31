@@ -61,6 +61,7 @@ mod pinned_drop;
 mod sidebar;
 mod sidebar_drop_feedback;
 mod unlock_argument;
+mod valent;
 mod volume_password;
 
 #[cfg(test)]
@@ -1128,6 +1129,7 @@ pub(super) struct SidebarState {
     view: BrowserView,
     browser: Rc<Browser>,
     volume_monitor: gio::VolumeMonitor,
+    valent: RefCell<valent::Devices>,
     mount_monitor: gio_unix::MountMonitor,
     preference_manager: Rc<super::preferences::PreferenceManager>,
     place_order: RefCell<Vec<&'static str>>,
@@ -1229,6 +1231,7 @@ pub(super) struct SidebarView {
     )]
     release_watch: device_release::SidebarWatch,
     bookmark_watch: RefCell<Option<crate::adapters::bookmarks::BookmarkWatch>>,
+    valent_watch: RefCell<Option<valent::Watch>>,
 }
 
 impl SidebarView {
@@ -1284,6 +1287,7 @@ impl SidebarView {
         unparent_sidebar_popovers(self.state.widget.upcast_ref());
         self.state.trash_monitor.take();
         self.bookmark_watch.take();
+        self.valent_watch.take();
         for handler in self.handlers.take() {
             self.state.volume_monitor.disconnect(handler);
         }
@@ -1718,6 +1722,7 @@ impl SidebarState {
             && mounts.is_empty()
             && password_drives.is_empty()
             && !device_release::any_pending()
+            && self.valent.borrow().phones.is_empty()
         {
             return;
         }
@@ -1725,6 +1730,7 @@ impl SidebarState {
             self.append_separator();
         }
         self.append_heading("DEVICES");
+        valent::append_rows(self);
         let mut shown = Vec::new();
         for volume in volumes {
             if let Some(ids) = self.append_volume(volume) {

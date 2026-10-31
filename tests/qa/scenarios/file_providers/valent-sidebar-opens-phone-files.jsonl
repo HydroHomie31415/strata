@@ -1,0 +1,16 @@
+{"scenario":"valent-sidebar-opens-phone-files","modes":["columns"],"setup":[{"fs":{"path":"$config/strata/providers/valent","mkdir":true,"parents":true}},{"fs":{"path":"$config/strata/providers/valent","chmod":"700"}},{"fs":{"path":"$config/strata/providers/valent/provider.py","from_repository":"src/ui/window/valent/tests/provider.py"}},{"fs":{"path":"$config/strata/providers/valent/state.json","write":"{\"revision\":0,\"connected\":true,\"mounted\":false}"}},{"fs":{"path":"$config/strata/providers/valent/provider.json","write":"{\"version\":1,\"id\":\"valent\",\"command\":[\"$python\",\"$config/strata/providers/valent/provider.py\",\"$config/strata/providers/valent/state.json\",\"$config/strata/providers/valent/record.jsonl\"]}"}}],"session_bus":true}
+{"wait":{"present":{"sidebar":"Fixture phone"}},"message":"the connected phone to appear in Devices"}
+{"settle":{"sidebar":"Fixture phone"}}
+{"click":{"sidebar":"Fixture phone"}}
+{"fs":{"path":"$config/strata/providers/valent/record.jsonl","has":{"contains":["\"action\": \"mount-phone\"","\"context\": \"mount-token\"","\"background\": true"]}},"message":"the phone row to request a mount using its current token"}
+{"fs":{"path":"$config/strata/providers/valent/state.json","write":"{\"revision\":1,\"connected\":true,\"mounted\":true,\"name\":\"Mounted fixture phone\"}"}}
+{"wait":{"present":{"sidebar":"Mounted fixture phone"}},"message":"the phone row to follow the mounted device's updated identity"}
+{"settle":{"sidebar":"Mounted fixture phone"}}
+{"click":{"sidebar":"Mounted fixture phone"}}
+{"fs":{"path":"$config/strata/providers/valent/record.jsonl","has":{"contains":["\"action\": \"open-storage\"","\"context\": \"storage-token\""]}},"message":"the row to open the phone's first storage instead of remounting"}
+{"fs":{"path":"$config/strata/providers/valent/state.json","write":"{\"revision\":2,\"connected\":false,\"mounted\":false}"}}
+{"wait":{"absent":{"sidebar":"Mounted fixture phone"}},"message":"the disconnected phone to leave the sidebar"}
+{"fs":{"path":"$config/strata/providers/valent/state.json","write":"{\"revision\":3,\"connected\":true,\"mounted\":false}"}}
+{"wait":{"present":{"sidebar":"Fixture phone"}},"message":"the reconnected phone to reappear"}
+{"fs":{"path":"$config/strata/providers/valent/disabled","write":""}}
+{"wait":{"absent":{"sidebar":"Fixture phone"}},"message":"disabling Valent to remove the phone row"}

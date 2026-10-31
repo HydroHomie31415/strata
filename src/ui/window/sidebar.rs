@@ -144,6 +144,7 @@ pub(in crate::ui) fn build_sidebar(
     );
     state.bind_order();
     let bookmark_watch = super::bookmarks::watch_sidebar(&state);
+    let valent_watch = super::valent::watch(&state);
     state.observe_navigation_and_trash();
     let (handlers, mount_handler) = connect_device_changes(&state);
     let recent_setting_handler = connect_recent_setting_changes(&state);
@@ -171,6 +172,7 @@ pub(in crate::ui) fn build_sidebar(
         recent_setting_handler: RefCell::new(recent_setting_handler),
         release_watch,
         bookmark_watch: RefCell::new(Some(bookmark_watch)),
+        valent_watch: RefCell::new(valent_watch),
     }
 }
 
@@ -306,6 +308,7 @@ impl SidebarState {
             browser: view.browser(),
             view,
             volume_monitor,
+            valent: RefCell::new(super::valent::Devices::default()),
             mount_monitor: gio_unix::MountMonitor::get(),
             preference_manager,
             place_order: RefCell::new(place_order),
